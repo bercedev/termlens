@@ -129,17 +129,14 @@ fn diff_color_always_keeps_the_overlap_note_and_paints_the_rows() -> termlens::R
     Ok(())
 }
 
-/// `--color` with no WHEN used to print the raw Option — `None` when the
-/// flag ended the line, `Some("before.snap")` when it quietly ate the
-/// operand after it — internals that name neither the flag's requirement
-/// nor the mistake (#452).
 /// Two 1000x1000 screens that differ in every cell. Painting used to ask
 /// the diff about each cell in turn, which took 8 s at 80,000 changed cells
 /// and would not finish here (#595).
 #[test]
 fn diff_color_always_paints_a_full_screen_change_quickly() {
     use std::process::{Command, Stdio};
-    use std::time::{Duration, Instant};
+    use std::sync::mpsc;
+    use std::time::Duration;
 
     let dir = std::env::temp_dir().join(format!("termlens-big-diff-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
@@ -168,16 +165,17 @@ fn diff_color_always_paints_a_full_screen_change_quickly() {
         .stderr(Stdio::null())
         .spawn()
         .expect("spawn termlens");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let status = loop {
-        if let Some(status) = child.try_wait().expect("wait") {
-            break status;
-        }
-        if Instant::now() > deadline {
-            let _ = child.kill();
-            panic!("a coloured diff of two 1000x1000 screens took over 60 s");
-        }
-        std::thread::sleep(Duration::from_millis(50));
+    // The exit is waited for on a thread of its own, so the deadline is a
+    // bounded wait on the exit itself rather than a polling sleep
+    // (CONTRIBUTING §3). On a regression the child is left to finish on its
+    // own; the test has already failed by then.
+    let (exited, exit) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = exited.send(child.wait());
+    });
+    let status = match exit.recv_timeout(Duration::from_secs(60)) {
+        Ok(status) => status.expect("wait for termlens"),
+        Err(_) => panic!("a coloured diff of two 1000x1000 screens took over 60 s"),
     };
     assert_eq!(status.code(), Some(1));
     let printed = std::fs::read_to_string(&out).expect("read output");
@@ -192,6 +190,10 @@ fn diff_color_always_paints_a_full_screen_change_quickly() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// `--color` with no WHEN used to print the raw Option — `None` when the
+/// flag ended the line, `Some("before.snap")` when it quietly ate the
+/// operand after it — internals that name neither the flag's requirement
+/// nor the mistake (#452).
 #[test]
 fn diff_names_a_missing_or_unknown_color_value() -> termlens::Result<()> {
     // The operand after the flag is taken as the value and refused as one
