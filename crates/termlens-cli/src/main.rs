@@ -17,6 +17,7 @@
 //! not propagated — and the screen alone goes to stdout, so `inspect … >
 //! file` is a saved screen `diff` and `render` read back (#340).
 
+use std::collections::HashSet;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::Path;
 use std::process::ExitCode;
@@ -428,6 +429,9 @@ fn colored(before: &Screen, after: &Screen, diff: &ScreenDiff) -> String {
     }
     let mut changed_rows: Vec<u16> = diff.cells().map(|(row, _, _, _)| row).collect();
     changed_rows.dedup();
+    // Collected once: asking the diff about every painted cell made a
+    // full-screen change quadratic (#595).
+    let changed: HashSet<(u16, u16)> = diff.cells().map(|(row, col, _, _)| (row, col)).collect();
     for row in changed_rows {
         let paint = |screen: &Screen, sgr: &str| -> String {
             let mut cells: Vec<String> = Vec::new();
@@ -443,8 +447,7 @@ fn colored(before: &Screen, after: &Screen, diff: &ScreenDiff) -> String {
                 } else {
                     cell.contents()
                 };
-                let changed = diff.cells().any(|(r, c, _, _)| r == row && c == col);
-                cells.push(if changed {
+                cells.push(if changed.contains(&(row, col)) {
                     format!("\x1b[{sgr}m{text}\x1b[0m")
                 } else {
                     text.to_owned()

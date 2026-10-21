@@ -133,6 +133,65 @@ fn diff_color_always_keeps_the_overlap_note_and_paints_the_rows() -> termlens::R
 /// flag ended the line, `Some("before.snap")` when it quietly ate the
 /// operand after it — internals that name neither the flag's requirement
 /// nor the mistake (#452).
+/// Two 1000x1000 screens that differ in every cell. Painting used to ask
+/// the diff about each cell in turn, which took 8 s at 80,000 changed cells
+/// and would not finish here (#595).
+#[test]
+fn diff_color_always_paints_a_full_screen_change_quickly() {
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    let dir = std::env::temp_dir().join(format!("termlens-big-diff-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let screen = |ch: char| {
+        let row = ch.to_string().repeat(1000);
+        format!(
+            "size: 1000x1000  cursor: 0,0\n{}\n",
+            vec![row; 1000].join("\n")
+        )
+    };
+    let (before, after, out) = (
+        dir.join("before.snap"),
+        dir.join("after.snap"),
+        dir.join("out"),
+    );
+    std::fs::write(&before, screen('a')).expect("write before");
+    std::fs::write(&after, screen('b')).expect("write after");
+
+    // The output is tens of megabytes, so it goes to a file rather than a
+    // pipe nobody drains while the test waits on the deadline.
+    let mut child = Command::new(env!("CARGO_BIN_EXE_termlens"))
+        .args(["diff", "--color", "always"])
+        .arg(&before)
+        .arg(&after)
+        .stdout(std::fs::File::create(&out).expect("out file"))
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn termlens");
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("wait") {
+            break status;
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            panic!("a coloured diff of two 1000x1000 screens took over 60 s");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(status.code(), Some(1));
+    let printed = std::fs::read_to_string(&out).expect("read output");
+    assert!(
+        printed.contains("\x1b[31ma\x1b[0m"),
+        "the before side is painted red"
+    );
+    assert!(
+        printed.contains("\x1b[32mb\x1b[0m"),
+        "the after side is painted green"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn diff_names_a_missing_or_unknown_color_value() -> termlens::Result<()> {
     // The operand after the flag is taken as the value and refused as one
