@@ -2114,7 +2114,7 @@ fn strip_paste_markers(text: &str) -> String {
 /// default. Past this the numbers stop being slow and start being a wedge:
 /// 5000x5000 was accepted and turned the first wait into a 16-second
 /// timeout that blamed the predicate.
-const MAX_DIMENSION: u16 = 1000;
+pub(crate) const MAX_DIMENSION: u16 = 1000;
 /// The smallest grid the emulator can serve. Not 1: see `check_size`.
 const MIN_DIMENSION: u16 = 2;
 

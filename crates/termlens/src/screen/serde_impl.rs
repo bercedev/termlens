@@ -21,6 +21,7 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::{Cell, Screen, TermState};
+use crate::terminal::MAX_DIMENSION;
 
 /// The cursor as three named fields rather than a tuple, so the JSON reads.
 #[derive(Serialize, Deserialize)]
@@ -90,6 +91,13 @@ impl<'de> Deserialize<'de> for Screen {
                 "saved-screen JSON format {} is not one this termlens reads (it reads format {JSON_FORMAT}); \
                  a newer termlens wrote this file",
                 wire.format
+            )));
+        }
+        if wire.cols > MAX_DIMENSION || wire.rows > MAX_DIMENSION {
+            return Err(D::Error::custom(format!(
+                "{}x{} is past the {MAX_DIMENSION}-per-axis limit of a terminal, \
+                 so no termlens wrote this screen",
+                wire.cols, wire.rows
             )));
         }
         if wire.cells.len() != usize::from(wire.rows) {
