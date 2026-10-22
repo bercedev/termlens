@@ -123,9 +123,39 @@ fn a_hand_edited_corpus_file_would_fail() {
     assert!(parsed.is_err(), "{parsed:?}");
 }
 
+#[test]
+fn a_declared_size_past_the_terminal_limit_is_refused_before_allocating() {
+    // 65535x65535 used to allocate 206 GB from the header alone and abort
+    // (#583). A live terminal is capped at 1000 per axis, so that is the
+    // largest screen any termlens wrote.
+    for size in ["65535x65535", "1001x1", "1x1001"] {
+        let err = Screen::parse(&format!("size: {size}  cursor: 0,0\n")).unwrap_err();
+        assert!(
+            matches!(&err, termlens::Error::Parse(m) if m.contains(size) && m.contains("1000")),
+            "{err}"
+        );
+    }
+    assert!(Screen::parse("size: 1000x1000  cursor: 0,0\n").is_ok());
+}
+
 #[cfg(feature = "serde")]
 mod json {
     use super::*;
+
+    #[test]
+    fn a_json_size_past_the_terminal_limit_is_refused() {
+        let dir = &versions()[0];
+        let mut file: serde_json::Value =
+            serde_json::from_str(&read(&dir.join("plain.json"))).unwrap();
+        file["cols"] = serde_json::json!(65535);
+        file["rows"] = serde_json::json!(65535);
+        let err = serde_json::from_value::<Screen>(file).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("65535x65535 is past the 1000-per-axis limit"),
+            "{err}"
+        );
+    }
 
     #[test]
     fn every_json_twin_reads_as_the_same_picture_as_its_text() {

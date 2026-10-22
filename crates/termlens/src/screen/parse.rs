@@ -12,6 +12,7 @@
 use unicode_width::UnicodeWidthChar;
 
 use super::{Cell, Color, Screen, Style, TermState};
+use crate::terminal::MAX_DIMENSION;
 use crate::{Error, Result};
 
 impl Screen {
@@ -139,6 +140,14 @@ fn parse_header(line: &str) -> Result<(u16, u16, (u16, u16, bool))> {
     if cols == 0 || rows == 0 {
         return Err(Error::Parse(format!(
             "line 1: a screen has at least one column and one row, got {cols}x{rows}"
+        )));
+    }
+    // The grid is allocated from this header before any line is read, so a
+    // declared size no terminal can have is refused here (#583).
+    if cols > MAX_DIMENSION || rows > MAX_DIMENSION {
+        return Err(Error::Parse(format!(
+            "line 1: {cols}x{rows} is past the {MAX_DIMENSION}-per-axis limit of a terminal, \
+             so no termlens wrote this screen"
         )));
     }
     let cursor = cursor.trim();

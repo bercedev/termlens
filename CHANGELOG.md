@@ -19,6 +19,12 @@ reads that marker.
 
 ### Fixed
 
+- `Screen::parse` and the JSON reader refuse a saved screen whose declared
+  size is past the 1000-per-axis limit a terminal has (#583), with an
+  `Error::Parse` that names it. The grid was allocated from the header before
+  any line was read, so a 31-byte file declaring `65535x65535` made `termlens
+  render` try to allocate 206 GB and abort. No termlens ever wrote a screen
+  that large.
 - A coloured `termlens diff` no longer takes time quadratic in the number of
   changed cells (#595). Painting checked each cell against the whole list of
   changed cells, so a full-screen change on a large terminal took seconds
